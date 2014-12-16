@@ -85,7 +85,7 @@ ifneq ($(findstring MINGW,$(UNAME)),)
 endif
 
 ifeq ($(LP64),yes)
-	libsubdir		:= lib$(lp64suffix)
+	libsubdir		:= lib$(lp64suffix)/x86_64-linux-gnu
     binsubdir		:= bin$(lp64binsuffix)
 else
 	libsubdir		:= lib
