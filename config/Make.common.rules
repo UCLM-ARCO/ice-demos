@@ -1,6 +1,6 @@
 # **********************************************************************
 #
-# Copyright (c) 2003-2013 ZeroC, Inc. All rights reserved.
+# Copyright (c) 2003-2014 ZeroC, Inc. All rights reserved.
 #
 # This copy of Ice is licensed to you under the terms described in the
 # ICE_LICENSE file included in this distribution.
@@ -12,22 +12,22 @@
 # ----------------------------------------------------------------------
 
 SHELL			= /bin/sh
-VERSION_MAJOR   	= 3
-VERSION_MINOR   	= 5
-VERSION_PATCH           = 1
-VERSION			= 3.5.1
-SHORT_VERSION           = 3.5
-SOVERSION		= 35
+VERSION_MAJOR   = 3
+VERSION_MINOR   = 6b
+VERSION_PATCH   = 51
+VERSION         = 3.6b
+SHORT_VERSION   = 3.6
+SOVERSION		= 36b
 
 INSTALL			= cp -fp
-INSTALL_PROGRAM		= ${INSTALL}
-INSTALL_LIBRARY		= ${INSTALL}
-INSTALL_DATA		= ${INSTALL}
+INSTALL_PROGRAM	= ${INSTALL}
+INSTALL_LIBRARY	= ${INSTALL}
+INSTALL_DATA	= ${INSTALL}
 
 OBJEXT			= .o
 
 UNAME			:= $(shell uname)
-MACHINE_TYPE		:= $(shell uname -m)
+MACHINE_TYPE	:= $(shell uname -m)
 
 #
 # Ensure ice_language has been set by the file that includes this one.
@@ -63,33 +63,71 @@ endif
 ifeq ($(UNAME),Linux)
    ifeq ($(MACHINE_TYPE),x86_64)
       #
-      # Some Linux distributions like Debian/Ubuntu don't use /usr/lib64.
+      # Ubuntu.
+      #
+      ifeq ($(shell test -d /usr/lib/x86_64-linux-gnu && echo 0),0)
+         lp64suffix	= /x86_64-linux-gnu
+      endif
+      
+      #
+      # Rhel/SLES
       #
       ifeq ($(shell test -d /usr/lib64 && echo 0),0)
           lp64suffix	= 64
       endif
+      
       ifeq ($(LP64),)
           LP64      	= yes
       endif
    endif
+   ifneq ($(LP64),yes)
+       binsuffix     = 32
+   endif
 endif
 
-ifeq ($(UNAME),Darwin)
-    ifeq ($(CPP11),yes)
-      cpp11suffix    = /c++11
+ifeq ($(shell test -d /usr/lib/i386-linux-gnu && echo 0),0)
+    lp32suffix     = /i386-linux-gnu
+endif
+
+ifeq ($(CPP11),yes)
+    ifneq ($(UNAME),Darwin)
+        cpp11libdirsuffix	= /c++11
+        cpp11libsuffix		= ++11
+        cpp11sonamedir		= ../
+        binsuffix 		:= $(binsuffix)$(cpp11libsuffix)
     endif
 endif
 
 ifneq ($(findstring MINGW,$(UNAME)),)
-    UNAME	:= MINGW
+    UNAME	                := MINGW
+    lp64suffix                  := /x64
+    COMPILER_MACHINE := $(shell $(CXX) -dumpmachine)
+    ifeq ($(COMPILER_MACHINE),x86_64-w64-mingw32)
+        LP64                    := yes
+    endif 
 endif
 
 ifeq ($(LP64),yes)
-	libsubdir		:= lib$(lp64suffix)/x86_64-linux-gnu
-    binsubdir		:= bin$(lp64binsuffix)
+	libsubdir		:= lib$(lp64suffix)
+        binsubdir		:= bin$(lp64binsuffix)
 else
-	libsubdir		:= lib
+	libsubdir		:= lib$(lp32suffix)
 	binsubdir		:= bin
+	#
+	# For x86 builds in x86_64 machines lib64subdir points to the x86_64 lib
+	# directory and libsubdir to the x86 lib directory.
+	#
+	ifeq ($(MACHINE_TYPE),x86_64)
+		ifeq ($(UNAME),Linux)
+			ifeq ($(shell test -d /usr/lib/x86_64-linux-gnu && echo 0),0)
+				ifeq ($(ice_dir),/usr)
+					lib64subdir               = lib/x86_64-linux-gnu
+				endif
+			else
+				lib64subdir               = lib$(lp64suffix)
+			endif
+		endif
+	endif
 endif
 
 #
@@ -152,10 +190,10 @@ $(warning Ignoring ICE_HOME environment variable to build current source tree.)
         #
 	ifneq ($(ICE_HOME),)
 	    ifdef slice_translator
-		ifneq ($(shell test -f $(ICE_HOME)/$(binsubdir)$(cpp11suffix)/$(slice_translator) && echo 0), 0)
-$(error Unable to find $(slice_translator) in $(ICE_HOME)/$(binsubdir)$(cpp11suffix), please verify ICE_HOME is properly configured and Ice is correctly installed.)
+		ifneq ($(shell test -f $(ICE_HOME)/$(binsubdir)/$(slice_translator) && echo 0), 0)
+$(error Unable to find $(slice_translator) in $(ICE_HOME)/$(binsubdir), please verify ICE_HOME is properly configured and Ice is correctly installed.)
 		endif
-		ifeq ($(shell test -f $(ice_dir)/cpp/bin$(cpp11suffix)/$(slice_translator) && echo 0), 0)
+		ifeq ($(shell test -f $(ice_dir)/cpp/bin/$(slice_translator) && echo 0), 0)
 $(warning Found $(slice_translator) in both ICE_HOME/bin and $(ice_dir)/cpp/bin, ICE_HOME/bin/$(slice_translator) will be used!)
 		endif
 		ice_cpp_dir = $(ICE_HOME)
@@ -179,8 +217,8 @@ $(error slice_translator must be defined)
     endif
 
     ifneq ($(ICE_HOME),)
-        ifneq ($(shell test -f $(ICE_HOME)/$(binsubdir)$(cpp11suffix)/$(slice_translator) && echo 0), 0)
-$(error Unable to find $(slice_translator) in $(ICE_HOME)/$(binsubdir)$(cpp11suffix), please verify ICE_HOME is properly configured and Ice is correctly installed.)
+        ifneq ($(shell test -f $(ICE_HOME)/$(binsubdir)/$(slice_translator) && echo 0), 0)
+$(error Unable to find $(slice_translator) in $(ICE_HOME)/$(binsubdir), please verify ICE_HOME is properly configured and Ice is correctly installed.)
         endif
         ice_dir = $(ICE_HOME)
     else
@@ -196,11 +234,11 @@ $(error Unable to find $(slice_translator) in $(ICE_HOME)/$(binsubdir)$(cpp11suf
                    $(warning Found $(slice_translator) in both /usr/bin and /Library/Developer/Ice-$(VERSION)/bin, /usr/bin/$(slice_translator) will be used!)
                 endif
             else
-                ifeq ($(shell test -f /opt/Ice-$(VERSION)/$(binsubdir)/$(slice_translator) && echo 0), 0)
-                    ice_dir = /opt/Ice-$(VERSION)
+                ifeq ($(shell test -f /Library/Developer/Ice-$(VERSION)/$(binsubdir)/$(slice_translator) && echo 0), 0)
+                    ice_dir = /Library/Developer/Ice-$(VERSION)
                 else
-                    ifeq ($(shell test -f /Library/Developer/Ice-$(VERSION)/$(binsubdir)/$(slice_translator) && echo 0), 0)
-                        ice_dir = /Library/Developer/Ice-$(VERSION)
+                    ifeq ($(shell test -f /opt/Ice-$(VERSION)/$(binsubdir)/$(slice_translator) && echo 0), 0)
+                        ice_dir = /opt/Ice-$(VERSION)
                     endif
                 endif
             endif
@@ -255,31 +293,34 @@ endif
 #
 ifneq ($(ice_dir), /usr)
     ifdef ice_src_dist
-	ifeq ($(ice_cpp_dir), $(ice_dir)/cpp)
-	    ice_lib_dir = $(ice_cpp_dir)/lib
-	else
-    	ice_lib_dir = $(ice_cpp_dir)/$(libsubdir)
-	endif
+        ice_lib_dir = $(ice_cpp_dir)/$(libsubdir)
     else
-        ice_lib_dir = $(ice_dir)/$(libsubdir)
+        ifndef lib64subdir
+            ice_lib_dir = $(ice_dir)/$(libsubdir)
+        else
+            ice_lib_dir = $(ice_dir)/$(lib64subdir)
+        endif
     endif
 
+    #
+    # We always set library path because the build needs to work
+    # whe slice compiler was built without RPATH
+    #
     ifeq ($(UNAME),Linux)
         export LD_LIBRARY_PATH := $(ice_lib_dir):$(LD_LIBRARY_PATH)
     endif
 
+    ifeq ($(UNAME),Darwin)
+        export DYLD_LIBRARY_PATH := $(ice_lib_dir):$(DYLD_LIBRARY_PATH)
+    endif
+
+    
     ifeq ($(UNAME),SunOS)
         ifeq ($(LP64),yes)
             export LD_LIBRARY_PATH_64 := $(ice_lib_dir):$(LD_LIBRARY_PATH_64)
         else
             export LD_LIBRARY_PATH := $(ice_lib_dir):$(LD_LIBRARY_PATH)
 	endif
-    endif
-
-    ifdef ice_src_dist
-	    ifeq ($(UNAME),Darwin)
-	        export DYLD_LIBRARY_PATH := $(ice_lib_dir):$(DYLD_LIBRARY_PATH)
-	    endif
     endif
 
     ifeq ($(UNAME),AIX)
@@ -309,35 +350,42 @@ endif
 
 
 #
-# Default functions for shared library names
+# Default functions for shared library names (we have to defined them here
+# for the SLICE2PARSERLIB dependency)
 #
-
 ifeq ($(mklibfilename),)
-    # These default platform-specific rules are needed for cs/config/Make.rules.cs
     ifeq ($(UNAME),Darwin)
-	mklibfilename	= $(if $(2),lib$(1).$(2).dylib,lib$(1).dylib)
+        mklibfilename   = $(if $(2),lib$(1)$(cpp11libsuffix).$(2).dylib,lib$(1)$(cpp11libsuffix).dylib)
     else
-	mklibfilename	= $(if $(2),lib$(1).so.$(2),lib$(1).so)
+        mklibfilename	= $(if $(2),lib$(1)$(cpp11libsuffix).so.$(2),lib$(1)$(cpp11libsuffix).so)
     endif
 endif
 
 ifeq ($(mksoname),)
-    mksoname	= $(if $(2),lib$(1).so.$(2),lib$(1).so)
+    ifeq ($(UNAME),Darwin)
+        mksoname    = $(if $(2),lib$(1)$(cpp11libsuffix).$(2).dylib,lib$(1).dylib)
+    else
+        mksoname	= $(if $(2),lib$(1)$(cpp11libsuffix).so.$(2),lib$(1).so)
+    endif
 endif
 
 ifeq ($(mklibname),)
     ifeq ($(STATICLIBS),yes)
-	mklibname	= lib$(1).a
+		mklibname	= lib$(1)$(cpp11libsuffix).a
     else
-	mklibname	= lib$(1).so
+        ifeq ($(UNAME),Darwin)
+	    mklibname   = lib$(1).dylib
+	else
+	    mklibname	= lib$(1).so
+	endif
     endif
 endif
 
 ifndef mklibtargets
     ifeq ($(STATICLIBS),yes)
-	mklibtargets	= $(3)
+		mklibtargets	= $(3)
     else
-	mklibtargets	= $(1) $(2) $(3)
+		mklibtargets	= $(1) $(2) $(3)
     endif
 endif
 
@@ -348,7 +396,7 @@ ifeq ($(installlib),)
     else
 	installlib	= $(INSTALL) $(2)/$(3) $(1); \
 			  rm -f $(1)/$(4); ln -s $(3) $(1)/$(4); \
-			  rm -f $(1)/$(5); ln -s $(4) $(1)/$(5); \
+			  rm -f $(1)$(cpp11libdirsuffix)/$(5); ln -s $(cpp11sonamedir)$(4) $(1)$(cpp11libdirsuffix)/$(5); \
 			  chmod a+rx $(1)/$(3) 
     endif
 endif
@@ -360,7 +408,7 @@ endif
 
 ifeq ($(installprogram),)
     installprogram	= $(INSTALL_PROGRAM) $(1) $(2); \
-			  chmod a+rx $(2)/$(notdir $(1))
+				chmod a+rx $(2)/$(notdir $(1))
 endif
 
 ifeq ($(mkdir),)
@@ -408,9 +456,4 @@ install-common::
 	@if test ! -f $(DESTDIR)$(prefix)/CHANGES$(TEXT_EXTENSION) ; \
 	then \
 		$(call installdata,$(top_srcdir)/../CHANGES$(TEXT_EXTENSION),$(DESTDIR)$(prefix)) ; \
-	fi
-
-	@if test ! -f $(DESTDIR)$(prefix)/RELEASE_NOTES$(TEXT_EXTENSION) ; \
-	then \
-		$(call installdata,$(top_srcdir)/../RELEASE_NOTES$(TEXT_EXTENSION),$(DESTDIR)$(prefix)) ; \
 	fi
